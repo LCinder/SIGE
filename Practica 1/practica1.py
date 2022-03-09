@@ -1,14 +1,16 @@
+import numpy
 import numpy as np
 import pandas
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from mlxtend.feature_selection import SequentialFeatureSelector as sequential_feature
 from imblearn.over_sampling import SMOTE
 from seaborn import heatmap
 import matplotlib.pyplot as plot
-
+from IPython.display import display
 
 def load_dataset():
     data = pandas.read_csv("data/diabetes.csv", delimiter=";")
@@ -16,11 +18,15 @@ def load_dataset():
     x = pandas.DataFrame(data[features])
     y = pandas.DataFrame(data["Diabetes_binary"])
     y.replace({False: 0, True: 1}, inplace=True)
+    normalize(x)
     return x, y
 
+def normalize(x):
+    for column in x.columns:
+        x[column] = x[column] / x[column].max()
 
 def remove_columns(data_arg, elements):
-    data = data_arg[:]
+    data = data_arg.copy()
     for element in elements:
         data = data.drop(element, axis="columns")
     return data
@@ -31,54 +37,61 @@ def pred(x_arg, y_arg):
     return round(cross_val_score(predictor, x_arg, y_arg).mean(), 3)
 
 
-def discretize(x_train_arg, x_test_arg):
-    elements = ["HOUR_I", "SPDLIM_H", "MONTH"]
-    bins = [2, 4, 5, 10]
+def discretize(x_arg, y_arg):
+    elements = [ "BMI", "Age", "Income"]
+    bins = [2, 4, 6]
 
-    accuracy_mean = pred(x_train_arg, y_train, x_test_arg, y_test)
+    accuracy_mean = pred(x_arg, y_arg)
     print("Accuracy: " + str(round(accuracy_mean, 3)))
+    x_train_disc_aux = x_arg.copy()
 
+    accuracy_max = 0
     for variable in elements:
         for bin_i in bins:
-            x_train_disc = x_train_arg[:]
+            x_train_disc = x_arg.copy()
 
-            x_train_disc[variable] = pandas.cut(x_train_disc[variable], labels=range(bin_i), bins=bin_i)
-            accuracy_mean_discr = pred(x_train_disc, y_train, x_test_arg, y_test)
-
-            if bin_i == 2 and variable == "HOUR_I":
-                x_train_disc_final = x_train_disc
+            x_train_disc_aux[variable] = pandas.cut(x_train_disc[variable], labels=range(bin_i), bins=bin_i)
+            accuracy_mean_discr = pred(x_train_disc_aux, y_arg)
+            if accuracy_mean_discr > accuracy_max:
+                x_train_disc[variable] = x_train_disc_aux[variable]
 
             print("Accuracy Discretize with variable/bin: " + variable + "/"
             + str(bin_i) + " : " + str(round(accuracy_mean_discr, 3)))
 
-    return x_train_disc_final
+    return x_train_disc
 
 
 def loss_values():
+    unknown = -999
+    x.replace(unknown, numpy.NAN, inplace=True)
     x_mode = x.copy()
     x_mean = x.copy()
+    x_instances = x.copy()
     x_char = x.copy()
-    y_char = y.copy()
-    unknown = -999
+    y_instances = y.copy()
 
+    # Mean and mode
     for variable in x:
-        x_mean[variable] = x_mean[variable].replace(unknown, None)
+        x_mean[variable] = x_mean[variable].replace(numpy.NAN, None)
 
         mean = x_mean[variable].mean()
         x_mean[variable].fillna(value=mean)
 
         mode = x_mode[variable].mode()[0]
-        x_mode[variable].replace(unknown, mode, inplace=True)
+        x_mode[variable].replace(numpy.NAN, mode, inplace=True)
 
-    for i in x.columns:
-        #x_char = x_char[(x_char[i] != unknown)]
-        x_char = x_char.columns[(x_char[i].columns != unknown)]
+    # Instances
+    indexes = []
+    for index, row in x_instances.iterrows():
+        if row.isnull().any():
+            indexes.append(index)
+    y_instances.drop(indexes, inplace=True)
+    x_instances = x_instances.dropna()
 
-    s = x_char.columns[x_char.columns == unknown]
-    missing_values = x_char.columns[(x_char == unknown).any()]
-    y_char = remove_columns(y_char, missing_values)
+    # Characteristics
+    x_char = x_char.dropna(axis=1)
 
-    return x_mean, x_mode, x_char, y_char
+    return x_mean, x_mode, x_char, x_instances, y_instances
 
 
 def plot_correlation():
@@ -88,37 +101,49 @@ def plot_correlation():
 
 
 #https://www.analyticsvidhya.com/blog/2021/04/backward-feature-elimination-and-its-implementation/
-def selection():
-    s = sequential_feature(GaussianNB(), k_features=10, forward=False)
-    s = s.fit(x, np.ravel(y_train))
-    features = list(s.k_feature_names_)
+def selection(x_arg, y_arg):
+    predictor = RandomForestClassifier(random_state=1)
+    predictor.fit(x_arg, numpy.ravel(y_arg))
+    features_importances = predictor.feature_importances_
+    features_names = predictor.feature_names_in_
+    #not_selected = list(set(x_arg.columns) - set(features))
 
-    not_selected = list(set(x.columns) - set(features))
+    feature_importance = pandas.DataFrame({"Feature": features_names,
+    "Importance": features_importances}).sort_values("Importance", ascending=False)
 
-    x_sel = remove_columns(x, not_selected)
-    x_test_sel = remove_columns(x_test, not_selected)
-    removed_features = pred(x_sel, y_train, x_test_sel, y_test)
+    display(feature_importance)
+    plot.savefig("img/feature_importances.png")
+
+    x_sel = remove_columns(x_arg, not_selected)
+    removed_features = pred(x_sel, y_arg)
 
     print("Accuracy All Characteristics: " + str(all))
     print("Features: " + str(features))
     print("Accuracy Removed Features: " + str(removed_features))
 
-    return x_sel, x_test_sel
+    return x_sel
 
 
 if __name__ == "__main__":
     x, y = load_dataset()
     # x_train, x_test, y_train, y_test = train_test_split(x, y, train_size=0.6)
 
-    x_mean, x_mode, x_char, y_char = loss_values()
+    x_mean, x_mode, x_char, x_instances, y_instances = loss_values()
     plot_correlation()
     print(pred(x_mean, y))
     print(pred(x_mode, y))
-    print(pred(x_char, y_char))
+    print(pred(x_char, y))
+    print(pred(x_instances, y_instances))
+
     #
     # #Ejercicio 1
-    # x_train_discr = discretize(x_train, x_test)
-    # print("------------------------------------------------------------------")
+    print("------------------------------------------------------------------")
+    x_mean = discretize(x_mean, y)
+    print("------------------------------------------------------------------")
+    #
+    print("------------------------------------------------------------------")
+    x_sel = selection(x_mean, y)
+    print("------------------------------------------------------------------")
     #
     # #Ejercicio 2
     # best, mode = loss_values()
