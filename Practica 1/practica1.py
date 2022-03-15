@@ -1,6 +1,7 @@
 import numpy
 import numpy as np
 import pandas
+import seaborn
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier
@@ -18,6 +19,8 @@ def load_dataset():
     x = pandas.DataFrame(data[features])
     y = pandas.DataFrame(data["Diabetes_binary"])
     y.replace({False: 0, True: 1}, inplace=True)
+    unknown = -999
+    x.replace(unknown, numpy.NAN, inplace=True)
     normalize(x)
     return x, y
 
@@ -33,8 +36,8 @@ def remove_columns(data_arg, elements):
 
 
 def pred(x_arg, y_arg):
-    predictor = DecisionTreeClassifier(random_state=1)
-    return round(cross_val_score(predictor, x_arg, y_arg).mean(), 3)
+    predictor = RandomForestClassifier(random_state=1)
+    return round(cross_val_score(predictor, x_arg, numpy.ravel(y_arg)).mean(), 3)
 
 
 def discretize(x_arg, y_arg):
@@ -61,9 +64,8 @@ def discretize(x_arg, y_arg):
     return x_train_disc
 
 
-def loss_values():
-    unknown = -999
-    x.replace(unknown, numpy.NAN, inplace=True)
+def loss_values(x):
+    x = remove_columns(x, ["NoDocbcCost"])
     x_mode = x.copy()
     x_mean = x.copy()
     x_instances = x.copy()
@@ -104,6 +106,8 @@ def plot_correlation():
 def selection(x_arg, y_arg):
     predictor = RandomForestClassifier(random_state=1)
     predictor.fit(x_arg, numpy.ravel(y_arg))
+    all_features = pred(x_arg, y_arg)
+
     features_importances = predictor.feature_importances_
     features_names = predictor.feature_names_in_
     #not_selected = list(set(x_arg.columns) - set(features))
@@ -114,21 +118,88 @@ def selection(x_arg, y_arg):
     display(feature_importance)
     plot.savefig("img/feature_importances.png")
 
-    x_sel = remove_columns(x_arg, not_selected)
-    removed_features = pred(x_sel, y_arg)
+    selected_features = [3, 5, 7, 10, 15]
+    for element in selected_features:
+        best_features = feature_importance[0:element]
+        x_sel = x_arg.copy()
 
-    print("Accuracy All Characteristics: " + str(all))
-    print("Features: " + str(features))
-    print("Accuracy Removed Features: " + str(removed_features))
+        x_sel = remove_columns(x_sel, best_features.Feature)
+        removed_features = pred(x_sel, y_arg)
+
+        print("--------------------------------------------------")
+        print("Number: {}".format(element))
+        print("Accuracy All Characteristics: " + str(all_features))
+        print("Features: " + str(best_features.Feature))
+        print("Accuracy Removed Features: " + str(removed_features))
 
     return x_sel
+
+def resample():
+    dataf = pandas.read_csv("data/diabetes.csv", delimiter=";")
+    occurrences_0, occurrences_1 = dataf.Diabetes_binary.value_counts()
+
+    dataf_0 = dataf[dataf.Diabetes_binary == 0]
+    dataf_1 = dataf[dataf.Diabetes_binary == 1]
+
+    dataf_0 = dataf_0.sample(occurrences_1)
+    diabetes_count = [numpy.count_nonzero(dataf_0.Diabetes_binary == 0), numpy.count_nonzero(dataf_1.Diabetes_binary == 1)]
+    plot.pie(diabetes_count, labels=["No Diabetes", "Diabetes"], autopct="%1.1f%%",
+    colors=seaborn.color_palette("pastel"))
+    plot.title(label="Samples proportion (Diabetes)")
+    plot.savefig("proportion_2.png")
+    plot.show()
+
+    dataf_resample = pandas.concat([dataf_0, dataf_1])
+    features = dataf_resample.columns[1:len(dataf_resample.columns)]
+    x_resample = pandas.DataFrame(dataf_resample[features])
+    y_resample = pandas.DataFrame(dataf_resample["Diabetes_binary"])
+    y_resample.replace({False: 0, True: 1}, inplace=True)
+    normalize(x_resample)
+
+    return x_resample, y_resample
+
+
+def plot_EDA():
+    diabetes_count = [numpy.count_nonzero(y == 0), numpy.count_nonzero(y == 1)]
+    plot.pie(diabetes_count, labels=["No Diabetes", "Diabetes"], autopct="%1.1f%%", colors=seaborn.color_palette("pastel"))
+    plot.title(label="Samples proportion (Diabetes)")
+    plot.savefig("proportion.png")
+    plot.show()
+
+    plot.figure(figsize=(20, 10))
+    plot.bar(x.columns, x.isna().sum(), color=seaborn.color_palette("pastel"))
+    plot.xticks(rotation=45)
+    plot.title(label="Number of missing values")
+    plot.xlabel("Columns")
+    plot.ylabel("missing values")
+    plot.savefig("img/missing_values.png")
+    plot.show()
+
+    x_plot = x.copy()
+    x_plot = x_plot.dropna()
+
+    for column, i in zip(x_plot.columns, range(x_plot.columns.shape[0])):
+        if len(numpy.unique(x_plot[column])) != 2:
+            plot.hist(x_plot[column], color=seaborn.color_palette("pastel")[i%len(seaborn.color_palette("pastel"))])
+        else:
+            column_count = [numpy.count_nonzero(x_plot[column] == 0), numpy.count_nonzero(x_plot[column] == 1)]
+            plot.pie(column_count, colors=seaborn.color_palette("pastel"), labels=["No (0)", "Si (1)"], autopct="%1.1f%%")
+        plot.title(label="Distribucion {}".format(column))
+        plot.savefig("img/{}.png".format(column))
+        plot.show()
+
+    ##############################################################################
+    ###########################All plots##########################################
+    ##############################################################################
+
 
 
 if __name__ == "__main__":
     x, y = load_dataset()
-    # x_train, x_test, y_train, y_test = train_test_split(x, y, train_size=0.6)
+    #plot_EDA()
 
-    x_mean, x_mode, x_char, x_instances, y_instances = loss_values()
+
+    x_mean, x_mode, x_char, x_instances, y_instances = loss_values(x)
     plot_correlation()
     print(pred(x_mean, y))
     print(pred(x_mode, y))
@@ -138,36 +209,32 @@ if __name__ == "__main__":
     #
     # #Ejercicio 1
     print("------------------------------------------------------------------")
-    x_mean = discretize(x_mean, y)
+    x_mean = discretize(x_mode, y)
     print("------------------------------------------------------------------")
     #
     print("------------------------------------------------------------------")
-    x_sel = selection(x_mean, y)
+    x_sel = selection(x_mode, y)
     print("------------------------------------------------------------------")
-    #
-    # #Ejercicio 2
-    # best, mode = loss_values()
-    #
-    # print("El mejor es " + mode)
-    # print("------------------------------------------------------------------")
-    #
-    # #Ejercicio 3
-    # x_test_not_imputed = remove_columns(x_test, not_imputed)
-    # x_sel_char, x_test_sel_char = selection(x_train_discr, x_test_not_imputed)
-    # x_sample = pandas.DataFrame(x_sel_char)
-    # x_sample = x_sample.sample(frac=0.3, random_state=1)
-    # y_train = y_train.loc[x_sample.index]
-    # x_test_sample = remove_columns(x_test, set(x_train.columns) - set(x_sample.columns))
-    #
-    # print("Muestreo del 30%")
-    # acc_res_sample = 0
-    # acc_res_oversample = 0
-    #
-    # acc_res_sample = pred(x_sample, y_train, x_test_sample, y_test)
-    # print("Accuracy sample: " + str(acc_res_sample))
-    #
-    # x_oversample, y_train_oversample = SMOTE().fit_resample(x_sample, y_train)
-    # acc_res_oversample = pred(x_oversample, y_train_oversample, x_test_sample, y_test)
-    # print("Accuracy oversampling: " + str(acc_res_oversample))
+
+    x_sample = x_mode.copy()
+    x_sample = x_sample.sample(frac=0.3, random_state=1)
+    y_sample = y.loc[x_sample.index]
+
+    print("Muestreo del 30%")
+    acc_res_sample = 0
+    acc_res_oversample = 0
+
+    acc_res_sample = pred(x_sample, y_sample)
+    print("Accuracy sample: " + str(acc_res_sample))
+
+    x_oversample, y_train_oversample = SMOTE().fit_resample(x_sample, y_sample)
+    acc_res_oversample = pred(x_oversample, y_train_oversample)
+    print("Accuracy oversampling: " + str(acc_res_oversample))
+
+    x_resample, y_resample = resample()
+    acc_res_undersampling = pred(x_resample, y_resample)
+    print("Accuracy undersampling: " + str(acc_res_undersampling))
+
+
 
 
