@@ -1,13 +1,10 @@
 import numpy
-import numpy as np
 import pandas
 import seaborn
 from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.naive_bayes import GaussianNB
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
-from mlxtend.feature_selection import SequentialFeatureSelector as sequential_feature
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.metrics import roc_curve, roc_auc_score, ConfusionMatrixDisplay
 from imblearn.over_sampling import SMOTE
 from seaborn import heatmap
 import matplotlib.pyplot as plot
@@ -35,16 +32,48 @@ def remove_columns(data_arg, elements):
     return data
 
 
-def pred(x_arg, y_arg):
-    predictor = RandomForestClassifier(random_state=1)
+def pred(x_arg, y_arg, roc=False, value="", tipo="RF"):
+    if tipo=="RFC":
+        predictor = RandomForestClassifier(random_state=1)
+    elif tipo=="KNC":
+        predictor = KNeighborsClassifier()
+    elif tipo=="ABC":
+        predictor = AdaBoostClassifier()
+
+    if roc:
+        x_train, x_test, y_train, y_test = train_test_split(x_arg, y_arg, train_size=0.6)
+
+        y_arg = numpy.ravel(y_arg)
+        y_test = numpy.ravel(y_test)
+        y_train = numpy.ravel(y_train)
+
+        predictor.fit(x_train, y_train)
+        y_pred = predictor.predict(x_test)
+        y_pred = numpy.ravel(y_pred)
+
+        fpr, tpr, threshold = roc_curve(y_test, y_pred)
+        auc = roc_auc_score(y_test, y_pred)
+        plot.xlabel("Specificity")
+        plot.ylabel("Sensitivity")
+        plot.plot(fpr, tpr, color="red", linestyle="dotted")
+        plot.plot(numpy.arange(0, 1, 0.1), numpy.arange(0, 1, 0.1), color="blue", label="Random Score", linestyle="--")
+        plot.title("AUC: " + str(round(auc, 3)))
+        plot.legend()
+        plot.plot()
+        plot.savefig("res_" + str(value) + ".png")
+        disp = ConfusionMatrixDisplay.from_estimator(predictor, x_test, y_test, cmap=plot.cm.Blues, normalize="true",
+        display_labels=["no_diabetes", "diabetes"])
+        plot.savefig("confussion_matrix_" + str(value) + ".png")
+        plot.show()
+        print("Cross Val: " + str(round(cross_val_score(predictor, x_arg, y_arg).mean(), 3)))
     return round(cross_val_score(predictor, x_arg, numpy.ravel(y_arg)).mean(), 3)
 
 
 def discretize(x_arg, y_arg):
-    elements = [ "BMI", "Age", "Income"]
+    elements = ["BMI", "Age", "Income"]
     bins = [2, 4, 6]
 
-    accuracy_mean = pred(x_arg, y_arg)
+    accuracy_mean = pred(x_arg, y_arg, tipo=tipo)
     print("Accuracy: " + str(round(accuracy_mean, 3)))
     x_train_disc_aux = x_arg.copy()
 
@@ -54,7 +83,7 @@ def discretize(x_arg, y_arg):
             x_train_disc = x_arg.copy()
 
             x_train_disc_aux[variable] = pandas.cut(x_train_disc[variable], labels=range(bin_i), bins=bin_i)
-            accuracy_mean_discr = pred(x_train_disc_aux, y_arg)
+            accuracy_mean_discr = pred(x_train_disc_aux, y_arg, tipo=tipo)
             if accuracy_mean_discr > accuracy_max:
                 x_train_disc[variable] = x_train_disc_aux[variable]
 
@@ -106,7 +135,7 @@ def plot_correlation():
 def selection(x_arg, y_arg):
     predictor = RandomForestClassifier(random_state=1)
     predictor.fit(x_arg, numpy.ravel(y_arg))
-    all_features = pred(x_arg, y_arg)
+    all_features = pred(x_arg, y_arg, tipo=tipo)
 
     features_importances = predictor.feature_importances_
     features_names = predictor.feature_names_in_
@@ -124,7 +153,7 @@ def selection(x_arg, y_arg):
         x_sel = x_arg.copy()
 
         x_sel = remove_columns(x_sel, best_features.Feature)
-        removed_features = pred(x_sel, y_arg)
+        removed_features = pred(x_sel, y_arg, tipo=tipo)
 
         print("--------------------------------------------------")
         print("Number: {}".format(element))
@@ -197,19 +226,37 @@ def plot_EDA():
 if __name__ == "__main__":
     x, y = load_dataset()
     #plot_EDA()
+    print("------------------------------------------------------------------")
+    print("------------------------------------------------------------------")
+    print("------------------------Practica 1--------------------------------")
+    print("------------------------------------------------------------------")
+    print("------------------------------------------------------------------")
+    print("Selecciona una opcion:")
+    print("1.-RandomForestClassifier, 2.-KNeighborsClassifier, 3.-AdaBoostClassifier")
+    n = input()
 
+    tipo = ""
+    if n == "1":
+        tipo = "RFC"
+    elif n == "2":
+        tipo = "KNC"
+    elif n == "3":
+        tipo = "ABC"
+
+    print("------------------------------------------------------------------")
 
     x_mean, x_mode, x_char, x_instances, y_instances = loss_values(x)
     plot_correlation()
-    print(pred(x_mean, y))
-    print(pred(x_mode, y))
-    print(pred(x_char, y))
-    print(pred(x_instances, y_instances))
+    print(pred(x_mean, y, tipo=tipo))
+    print(pred(x_mode, y, tipo=tipo))
+    print(pred(x_char, y, tipo=tipo))
+    print(pred(x_instances, y_instances, tipo=tipo))
 
     #
     # #Ejercicio 1
     print("------------------------------------------------------------------")
     x_mean = discretize(x_mode, y)
+    print(pred(x_mean, y, True, "Normal", tipo=tipo))
     print("------------------------------------------------------------------")
     #
     print("------------------------------------------------------------------")
@@ -224,16 +271,18 @@ if __name__ == "__main__":
     acc_res_sample = 0
     acc_res_oversample = 0
 
-    acc_res_sample = pred(x_sample, y_sample)
+    acc_res_sample = pred(x_sample, y_sample, tipo=tipo)
     print("Accuracy sample: " + str(acc_res_sample))
 
-    x_oversample, y_train_oversample = SMOTE().fit_resample(x_sample, y_sample)
-    acc_res_oversample = pred(x_oversample, y_train_oversample)
+    x_oversample, y_oversample = SMOTE().fit_resample(x_sample, y_sample)
+    acc_res_oversample = pred(x_oversample, y_oversample, tipo=tipo)
     print("Accuracy oversampling: " + str(acc_res_oversample))
+    print(pred(x_oversample, y_oversample, True, "Oversampling", tipo=tipo))
 
     x_resample, y_resample = resample()
-    acc_res_undersampling = pred(x_resample, y_resample)
+    acc_res_undersampling = pred(x_resample, y_resample, tipo=tipo)
     print("Accuracy undersampling: " + str(acc_res_undersampling))
+    print(pred(x_resample, y_resample, True, "Undersampling", tipo=tipo))
 
 
 
