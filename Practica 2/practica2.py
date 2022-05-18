@@ -1,24 +1,25 @@
 import os
+
+import cv2
 import numpy
 import matplotlib.pyplot as plot
 from PIL import Image, UnidentifiedImageError
 from keras import Input
-from keras.layers import Conv2D, MaxPooling2D, Flatten, Dropout, LSTM, SimpleRNN, InputLayer
+from keras.layers import Conv2D, MaxPooling2D, Flatten, Dropout, SimpleRNN, InputLayer
 from tensorflow import keras
 from keras.models import Sequential
 from keras.optimizers import gradient_descent_v2, adam_v2
-from keras.layers.core import Dense, Activation
+from keras.layers.core import Dense
 from keras.regularizers import l1, l2
-import seaborn
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import ConfusionMatrixDisplay
 
-(HEIGHT, WIDTH) = (128, 128)
+(HEIGHT, WIDTH) = (200, 200)
 
 
 def plot_results(y_pred, y_test, hist):
-    seaborn.heatmap(confusion_matrix(y_test, y_pred.astype(int)), annot=True)
-    plot.xlabel("Valores verdaderos")
-    plot.ylabel("Valores predichos")
+    disp = ConfusionMatrixDisplay.from_predictions(y_pred.astype(int), y_test, cmap=plot.cm.Blues, normalize="true",
+                                                   display_labels=["0", "1"])
+    plot.savefig("confussion_matrix.png")
     plot.show()
 
     plot.plot(hist.history["accuracy"])
@@ -48,11 +49,11 @@ def NeuralNetwork(x_train_arg, y_train_arg, x_test_arg, y_test_arg, x_val_arg, y
             InputLayer((HEIGHT, WIDTH, 3)),
             # Capa 1
             # Red neuronal convolutiva con mascara 3x3
-            Conv2D(32, activation="relu", kernel_size=3),  # , kernel_regularizer=l2(0.01)),
+            Conv2D(16, activation="relu", kernel_size=3),  # , kernel_regularizer=l2(0.01)),
             # Capa 2
             Conv2D(64, activation="relu", kernel_size=3),  # , kernel_regularizer=l2(0.01)),
             # Capa 3
-            # Conv2D(128, activation="relu", kernel_size=3),  # , kernel_regularizer=l2(0.01)),
+            Conv2D(128, activation="relu", kernel_size=3),  # , kernel_regularizer=l2(0.01)),
             # Capa 4
             # Conv2D(128, activation="relu", kernel_size=3),  # kernel_regularizer=l2(0.01)),
             # Capa 5
@@ -62,7 +63,7 @@ def NeuralNetwork(x_train_arg, y_train_arg, x_test_arg, y_test_arg, x_val_arg, y
             Dropout(0.8),
             # Serializa(tranforma) un tensor(array)
             Flatten(),
-            Dense(64, activation="relu", input_dim=HEIGHT * WIDTH),
+            # Dense(64, activation="relu", input_dim=HEIGHT * WIDTH),
             # Capa 6
             Dense(1, activation="sigmoid")  # , kernel_regularizer=l2(0.01))
         ])
@@ -115,11 +116,15 @@ def NeuralNetwork(x_train_arg, y_train_arg, x_test_arg, y_test_arg, x_val_arg, y
     regularization = keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=10)
     # sparse_categorical_crossentropy
     lr = 0.1
-    model.compile(optimizer=gradient_descent_v2.SGD(learning_rate=lr, decay=lr / epochs), loss="binary_crossentropy",
-                  metrics=["accuracy"])
-    hist = model.fit(numpy.array(x_train, numpy.float32), numpy.array(list(map(int, y_train)), numpy.float32),
-                     epochs=epochs, validation_split=0.1,
-                     batch_size=32, callbacks=[regularization], validation_data=(x_val, y_val))
+    adam = adam_v2.Adam()
+
+    sgd = gradient_descent_v2.SGD(learning_rate=lr, decay=lr / epochs)
+
+    model.compile(optimizer=adam, loss="binary_crossentropy", metrics=["accuracy"])
+    hist = model.fit(numpy.array(x_train, numpy.float32), numpy.array(y_train),
+                     epochs=epochs, batch_size=32, callbacks=[regularization], validation_data=(numpy.array(x_val),
+                                                                                                numpy.array(y_val)))
+
     accuracy = model.evaluate(numpy.array(x_test), numpy.array(y_test, numpy.float32))
     y_pred = (model.predict(numpy.array(x_test)) > 0.5).astype(int).ravel()
     plot_results(y_pred, numpy.array(y_test, numpy.float32), hist)
@@ -137,7 +142,7 @@ def load_dataset(dataset):
     imgs = []
     class_type = []
 
-    max_elements = len(os.listdir(dataset + "/1"))
+    max_elements = 50 #len(os.listdir(dataset + "/1"))
 
     for dir in os.listdir(dataset):
         elements = 0
@@ -147,9 +152,9 @@ def load_dataset(dataset):
                 if elements < max_elements:
                     try:
                         path = os.path.join(dataset, dir, file)
-                        img = numpy.array(Image.open(path))  # cv2.imread(path, cv2.COLOR_BGR2RGB)
-                        img = (numpy.resize(img, (HEIGHT, WIDTH, 3))).astype(
-                            "float32")  # numpy.array(cv2.resize(img, (HEIGHT, WIDTH))).astype("float32")
+                        img = cv2.imread(path, cv2.COLOR_BGR2RGB)
+                        img = numpy.array(cv2.resize(img, (HEIGHT, WIDTH),
+                                                     interpolation=cv2.INTER_AREA)).astype("float32")
                         img /= 255
                         imgs.append(img)
                         class_type.append(int(dir))
