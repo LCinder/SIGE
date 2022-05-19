@@ -58,8 +58,10 @@ def NeuralNetwork(x_train_arg, y_train_arg, x_test_arg, y_test_arg, x_val_arg, y
             Conv2D(512, activation="relu", kernel_size=3),
             MaxPooling2D(pool_size=(2, 2)),# , kernel_regularizer=l2(0.01)),
             BatchNormalization(),
+            Dropout(0.2),
             # Capa 3
-            Conv2D(128, activation="relu", kernel_size=3),  # , kernel_regularizer=l2(0.01)),
+            Conv2D(128, activation="relu", kernel_size=3),
+            Dropout(0.2),  # , kernel_regularizer=l2(0.01)),
             # Capa 4
             # Conv2D(128, activation="relu", kernel_size=3),  # kernel_regularizer=l2(0.01)),
             # Capa 5
@@ -68,7 +70,7 @@ def NeuralNetwork(x_train_arg, y_train_arg, x_test_arg, y_test_arg, x_val_arg, y
             # Serializa(tranforma) un tensor(array)
             # Para evitar el sobreajuste se eliminan nodos aleatoriamente
             BatchNormalization(),
-            Dropout(0.1),
+            Dropout(0.2),
             Flatten(),
             # Dense(64, activation="relu", input_dim=HEIGHT * WIDTH),
             # Capa 6
@@ -124,7 +126,7 @@ def NeuralNetwork(x_train_arg, y_train_arg, x_test_arg, y_test_arg, x_val_arg, y
     # Regularizacion
     regularization = keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=10)
     # sparse_categorical_crossentropy
-    lr = 0.00001
+    lr = 0.0001
     adam = adam_v2.Adam(learning_rate=lr)
 
     sgd = gradient_descent_v2.SGD(learning_rate=lr, decay=lr * epochs)
@@ -133,7 +135,7 @@ def NeuralNetwork(x_train_arg, y_train_arg, x_test_arg, y_test_arg, x_val_arg, y
        model.compile(optimizer=adam, loss="binary_crossentropy", metrics=["accuracy"])
 
     hist = model.fit(numpy.array(x_train, numpy.float32), numpy.array(y_train),
-                     epochs=epochs, batch_size=128, callbacks=[regularization], validation_data=(numpy.array(x_val),
+                     epochs=epochs, batch_size=50, callbacks=[regularization], validation_data=(numpy.array(x_val),
                                                                                                 numpy.array(y_val)))
 
     accuracy = model.evaluate(numpy.array(x_test), numpy.array(y_test, numpy.float32))
@@ -155,7 +157,7 @@ def load_dataset(dataset):
     imgs = []
     class_type = []
 
-    max_elements = 50 #len(os.listdir(dataset + "/1"))
+    max_elements = 200 #len(os.listdir(dataset + "/1"))
 
     for dir in os.listdir(dataset):
         elements = 0
