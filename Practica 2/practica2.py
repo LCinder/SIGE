@@ -5,15 +5,17 @@ import numpy
 import matplotlib.pyplot as plot
 from PIL import Image, UnidentifiedImageError
 from keras import Input
-from keras.layers import Conv2D, MaxPooling2D, Flatten, Dropout, SimpleRNN, InputLayer
+from keras.layers import Conv2D, MaxPooling2D, Flatten, Dropout, SimpleRNN, InputLayer, BatchNormalization
+from sklearn.utils import shuffle
 from tensorflow import keras
 from keras.models import Sequential
 from keras.optimizers import gradient_descent_v2, adam_v2
 from keras.layers.core import Dense
 from keras.regularizers import l1, l2
 from sklearn.metrics import ConfusionMatrixDisplay
+from autokeras import ImageClassifier
 
-(HEIGHT, WIDTH) = (200, 200)
+(HEIGHT, WIDTH) = (128, 128)
 
 
 def plot_results(y_pred, y_test, hist):
@@ -49,9 +51,13 @@ def NeuralNetwork(x_train_arg, y_train_arg, x_test_arg, y_test_arg, x_val_arg, y
             InputLayer((HEIGHT, WIDTH, 3)),
             # Capa 1
             # Red neuronal convolutiva con mascara 3x3
-            Conv2D(16, activation="relu", kernel_size=3),  # , kernel_regularizer=l2(0.01)),
+            Conv2D(32, activation="relu", kernel_size=3),
+            MaxPooling2D(pool_size=(2, 2)),# , kernel_regularizer=l2(0.01)),
+            BatchNormalization(),
             # Capa 2
-            Conv2D(64, activation="relu", kernel_size=3),  # , kernel_regularizer=l2(0.01)),
+            Conv2D(512, activation="relu", kernel_size=3),
+            MaxPooling2D(pool_size=(2, 2)),# , kernel_regularizer=l2(0.01)),
+            BatchNormalization(),
             # Capa 3
             Conv2D(128, activation="relu", kernel_size=3),  # , kernel_regularizer=l2(0.01)),
             # Capa 4
@@ -59,9 +65,10 @@ def NeuralNetwork(x_train_arg, y_train_arg, x_test_arg, y_test_arg, x_val_arg, y
             # Capa 5
             # Conv2D(1500, activation="relu", kernel_size=3),  # , kernel_regularizer=l2(0.01)),
             MaxPooling2D(pool_size=(2, 2)),
-            # Para evitar el sobreajuste se eliminan nodos aleatoriamente
-            Dropout(0.8),
             # Serializa(tranforma) un tensor(array)
+            # Para evitar el sobreajuste se eliminan nodos aleatoriamente
+            BatchNormalization(),
+            Dropout(0.1),
             Flatten(),
             # Dense(64, activation="relu", input_dim=HEIGHT * WIDTH),
             # Capa 6
@@ -104,6 +111,8 @@ def NeuralNetwork(x_train_arg, y_train_arg, x_test_arg, y_test_arg, x_val_arg, y
             Dropout(0.5),
             Dense(10, activation="softmax")
         ])
+    elif type == "4":
+        model = ImageClassifier(max_trials=1)
     #############################################
     #############################################
     # x_train = x_train.reshape(x_train.shape[0], 500, 500, 1)
@@ -115,19 +124,23 @@ def NeuralNetwork(x_train_arg, y_train_arg, x_test_arg, y_test_arg, x_val_arg, y
     # Regularizacion
     regularization = keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=10)
     # sparse_categorical_crossentropy
-    lr = 0.1
-    adam = adam_v2.Adam()
+    lr = 0.00001
+    adam = adam_v2.Adam(learning_rate=lr)
 
-    sgd = gradient_descent_v2.SGD(learning_rate=lr, decay=lr / epochs)
+    sgd = gradient_descent_v2.SGD(learning_rate=lr, decay=lr * epochs)
 
-    model.compile(optimizer=adam, loss="binary_crossentropy", metrics=["accuracy"])
+    if type != "4":
+       model.compile(optimizer=adam, loss="binary_crossentropy", metrics=["accuracy"])
+
     hist = model.fit(numpy.array(x_train, numpy.float32), numpy.array(y_train),
-                     epochs=epochs, batch_size=32, callbacks=[regularization], validation_data=(numpy.array(x_val),
+                     epochs=epochs, batch_size=128, callbacks=[regularization], validation_data=(numpy.array(x_val),
                                                                                                 numpy.array(y_val)))
 
     accuracy = model.evaluate(numpy.array(x_test), numpy.array(y_test, numpy.float32))
-    y_pred = (model.predict(numpy.array(x_test)) > 0.5).astype(int).ravel()
-    plot_results(y_pred, numpy.array(y_test, numpy.float32), hist)
+    pred = model.predict(numpy.array(x_test))
+    y_pred = (pred > 0.5).astype(int).ravel()
+    y_test = numpy.array(y_test, numpy.float32).ravel()
+    plot_results(y_pred, y_test, hist)
     #############################################
     #############################################
     print("Accuracy: " + str(round(accuracy[1], 3)))
@@ -155,12 +168,14 @@ def load_dataset(dataset):
                         img = cv2.imread(path, cv2.COLOR_BGR2RGB)
                         img = numpy.array(cv2.resize(img, (HEIGHT, WIDTH),
                                                      interpolation=cv2.INTER_AREA)).astype("float32")
-                        img /= 255
+                        img /= 255.0
                         imgs.append(img)
                         class_type.append(int(dir))
                         elements += 1
                     except UnidentifiedImageError:
                         print("Image error")
+
+    imgs, class_type = shuffle(imgs, class_type, random_state=0)
     return imgs, class_type
 
 
